@@ -3,7 +3,9 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer,
 } from 'recharts'
 import { fetchHealth, fetchSimulation } from './api'
+import DroneVisual3D from './DroneVisual3D'
 import EngineVisual3D from './EngineVisual3D'
+import WarRoomBackground from './WarRoomBackground'
 
 const STATUS_META = {
   normal: { label: 'Normal', color: 'var(--status-normal)' },
@@ -237,6 +239,15 @@ export default function App() {
     return Math.min(100, Math.max(0, base + anomalyBoost))
   }, [sim, currentCycle])
 
+  // Illustrative engine-core readout (CHT / RPM) derived from risk, so the
+  // engine card shows a plausible physical condition alongside the 3D view.
+  const engineCondition = useMemo(() => {
+    if (!sim || currentCycle === null) return null
+    const cht = 165 + (riskScore / 100) * 95
+    const rpm = 2200 + (riskScore / 100) * 3400
+    return { cht, rpm }
+  }, [sim, currentCycle, riskScore])
+
   const needlePos = useMemo(() => {
     const angleDeg = 180 - (riskScore / 100) * 180
     const angleRad = (angleDeg * Math.PI) / 180
@@ -289,10 +300,20 @@ export default function App() {
   }
 
   if (loading && !sim) {
-    return <div className="shell"><div className="loading">Loading digital twin...</div></div>
+    return (
+      <>
+        <WarRoomBackground />
+        <div className="shell"><div className="loading">Establishing uplink to digital twin...</div></div>
+      </>
+    )
   }
   if (error) {
-    return <div className="shell"><div className="loading error">Could not reach backend: {error}</div></div>
+    return (
+      <>
+        <WarRoomBackground />
+        <div className="shell"><div className="loading error">Uplink lost — could not reach backend: {error}</div></div>
+      </>
+    )
   }
   if (!sim || currentCycle === null) return null
 
@@ -304,10 +325,15 @@ export default function App() {
   const statusMeta = STATUS_META[status]
 
   return (
+    <>
+    <WarRoomBackground />
     <div className="shell">
-      <header className="topbar">
+      <header className="topbar hud-frame">
         <div>
-          <div className="eyebrow">Digital twin / piston engine</div>
+          <div className="eyebrow">
+            <span className="live-dot" style={{ '--pill-color': statusMeta.color }} />
+            WAR ROOM · UAV DIGITAL TWIN UPLINK
+          </div>
           <h1>TAPAS-class engine health monitor</h1>
         </div>
         <div className="header-right">
@@ -380,9 +406,32 @@ export default function App() {
             <div className="gauge-score mono">{riskScore.toFixed(0)} / 100</div>
           </div>
         </div>
-        <div className="engine-3d-card">
+        <div className="drone-3d-card hud-frame">
+          <div className="drone-3d-tag mono">UAV-{seed.toString().padStart(3, '0')} · LIVE ORBIT</div>
+          <DroneVisual3D status={status} riskScore={riskScore} />
+          <div className="engine-3d-caption">Live airframe state — status-linked sensor pod &amp; engine glow</div>
+        </div>
+        <div className="engine-3d-card hud-frame">
+          <div className="drone-3d-tag mono">ENGINE CORE · CONDITION</div>
           <EngineVisual3D status={status} riskScore={riskScore} />
-          <div className="engine-3d-caption">Live engine state</div>
+          <div className="engine-readout">
+            <div className="engine-readout-stat">
+              <span className="engine-readout-label">CHT</span>
+              <span className="engine-readout-value mono" style={{ color: statusMeta.color }}>
+                {engineCondition ? engineCondition.cht.toFixed(0) : '--'}<span className="unit">°C</span>
+              </span>
+            </div>
+            <div className="engine-readout-stat">
+              <span className="engine-readout-label">RPM</span>
+              <span className="engine-readout-value mono">
+                {engineCondition ? engineCondition.rpm.toFixed(0) : '--'}
+              </span>
+            </div>
+            <div className="engine-readout-stat">
+              <span className="engine-readout-label">Status</span>
+              <span className="engine-readout-value mono" style={{ color: statusMeta.color }}>{statusMeta.label}</span>
+            </div>
+          </div>
         </div>
         <div className="impact-card">
           <h3 className="impact-title">Early-warning impact</h3>
@@ -629,5 +678,6 @@ export default function App() {
         models are the trained artifacts from the Colab pipeline (or placeholders if not yet added).
       </footer>
     </div>
+    </>
   )
 }

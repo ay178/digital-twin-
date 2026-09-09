@@ -3,6 +3,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer,
 } from 'recharts'
 import { fetchHealth, fetchSimulation } from './api'
+import EngineVisual3D from './EngineVisual3D'
 
 const STATUS_META = {
   normal: { label: 'Normal', color: 'var(--status-normal)' },
@@ -378,6 +379,10 @@ export default function App() {
             <div className="gauge-label">{riskLabel} risk</div>
             <div className="gauge-score mono">{riskScore.toFixed(0)} / 100</div>
           </div>
+        </div>
+        <div className="engine-3d-card">
+          <EngineVisual3D status={status} riskScore={riskScore} />
+          <div className="engine-3d-caption">Live engine state</div>
         </div>
         <div className="impact-card">
           <h3 className="impact-title">Early-warning impact</h3>

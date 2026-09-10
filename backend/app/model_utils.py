@@ -128,22 +128,57 @@ def load_artifacts():
     }
 
 
-def simulate_engine_run(total_cycles: int, n_features: int, seed: int, rul_cap: int):
+def _healthy_baseline(rul_model, ae_model, n_features: int, window_size: int, seed: int = 0):
+    """Find a per-feature vector that both models agree looks like a
+    healthy, early-life engine.
+
+    Two things need to line up for the synthetic mission to make sense:
+    1. The autoencoder should reconstruct the "healthy" vector with low
+       error (otherwise every mission starts already flagged critical --
+       see the module docstring above `simulate_engine_run`).
+    2. The RUL model, shown a window of that same vector repeated across
+       time, should predict a *high* remaining-useful-life (otherwise every
+       mission starts already flagged "watch", regardless of how healthy it
+       actually is).
+
+    Neither model ships with the real training data to sample a genuine
+    "cycle 1" vector from, so instead we search a handful of candidate
+    baselines: converge each to a fixed point of the autoencoder (a vector
+    it reconstructs near-perfectly, by construction -- satisfies #1), then
+    ask the RUL model which of those candidates it considers the healthiest
+    (satisfies #2). Both passes are batched into a couple of model calls
+    total, not one per candidate, to keep this fast.
+    """
+    rng = np.random.default_rng(seed)
+    n_candidates = 6
+    x = rng.uniform(0.2, 0.8, size=(n_candidates, n_features)).astype(np.float32)
+    for _ in range(15):
+        x = ae_model.predict(x, verbose=0)
+
+    windows = np.repeat(x[:, np.newaxis, :], window_size, axis=1)  # (n_candidates, window_size, n_features)
+    rul_estimates = rul_model.predict(windows, verbose=0).flatten()
+    best = int(np.argmax(rul_estimates))
+    return x[best]
+
+
+def simulate_engine_run(rul_model, ae_model, total_cycles: int, n_features: int, window_size: int, seed: int, rul_cap: int):
     """Generate a synthetic run-to-failure mission in normalized [0,1] feature space."""
     rng = np.random.default_rng(seed)
+    baseline = _healthy_baseline(rul_model, ae_model, n_features, window_size, seed)
+
     data = np.zeros((total_cycles, n_features))
     sensitive_idx = rng.choice(n_features, size=max(3, n_features // 3), replace=False)
     degradation_start = int(total_cycles * 0.6)
 
     for i in range(total_cycles):
-        row = 0.3 + 0.05 * rng.standard_normal(n_features)
+        row = baseline + 0.02 * rng.standard_normal(n_features)
         if i > degradation_start:
             progress = (i - degradation_start) / (total_cycles - degradation_start)
             row[sensitive_idx] += 0.5 * (progress ** 2)
         data[i] = np.clip(row, 0.0, 1.0)
 
     true_rul = np.clip(total_cycles - 1 - np.arange(total_cycles), 0, rul_cap).astype(float)
-    return data, true_rul, sensitive_idx.tolist()
+    return data, true_rul, sensitive_idx.tolist(), degradation_start
 
 
 def run_predictions(rul_model, ae_model, data: np.ndarray, window_size: int):

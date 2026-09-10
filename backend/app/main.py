@@ -53,12 +53,25 @@ def simulate(
     threshold = config["anomaly_threshold"]
     rul_cap = config["rul_cap"]
 
-    data, true_rul, sensitive_idx = model_utils.simulate_engine_run(
-        cycles, n_features, seed, rul_cap
+    data, true_rul, sensitive_idx, degradation_start = model_utils.simulate_engine_run(
+        _artifacts["rul_model"], _artifacts["ae_model"], cycles, n_features, window_size, seed, rul_cap
     )
     rul_preds, anomaly_scores, feature_errors = model_utils.run_predictions(
         _artifacts["rul_model"], _artifacts["ae_model"], data, window_size
     )
+
+    # Safety net: calibrate the "critical" cutoff against this mission's own
+    # pre-degradation reconstruction error instead of trusting config.pkl's
+    # threshold blindly. The stored threshold was fit against the original
+    # training set's error distribution; if the live simulator's healthy
+    # baseline sits even slightly off that distribution (different seed,
+    # different noise level, a retrained model, etc.), a stale threshold
+    # makes every mission report critical from cycle zero. Using
+    # mean + 4*std of the actual healthy-phase errors keeps the cutoff
+    # honest for whatever data is actually being scored right now.
+    healthy_errors = anomaly_scores[:degradation_start]
+    calibrated_threshold = float(healthy_errors.mean() + 4 * healthy_errors.std()) if len(healthy_errors) else threshold
+    threshold = max(threshold, calibrated_threshold)
 
     first_valid_cycle = window_size - 1
     status_per_cycle = []

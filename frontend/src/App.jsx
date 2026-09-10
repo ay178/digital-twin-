@@ -341,6 +341,9 @@ export default function App() {
             <button className={view === 'single' ? 'tab active' : 'tab'} onClick={() => setView('single')}>
               Single engine
             </button>
+            <button className={view === 'drone' ? 'tab active' : 'tab'} onClick={() => setView('drone')}>
+              Live orbit
+            </button>
             <button className={view === 'fleet' ? 'tab active' : 'tab'} onClick={() => setView('fleet')}>
               Fleet overview
             </button>
@@ -389,6 +392,38 @@ export default function App() {
               })}
             </div>
           )}
+        </section>
+      ) : view === 'drone' ? (
+        <section className="drone-page">
+          <div className="drone-page-main hud-frame">
+            <div className="drone-3d-tag mono">
+              UAV-{seed.toString().padStart(3, '0')} · LIVE ORBIT · CYCLE {currentCycle}
+            </div>
+            <DroneVisual3D status={status} riskScore={riskScore} />
+          </div>
+          <div className="drone-page-side">
+            <div className="status-pill" style={{ '--pill-color': statusMeta.color }}>
+              {statusMeta.label}
+            </div>
+            <div className="drone-page-stats">
+              <div className="hero-metric">
+                <div className="hero-label">Risk score</div>
+                <div className="hero-value">{riskScore.toFixed(0)}<span className="unit">/ 100</span></div>
+              </div>
+              <div className="hero-metric">
+                <div className="hero-label">Predicted RUL</div>
+                <div className="hero-value">{predictedRul.toFixed(1)}<span className="unit">cycles</span></div>
+              </div>
+              <div className="hero-metric">
+                <div className="hero-label">Anomaly score</div>
+                <div className="hero-value">{anomalyScore.toFixed(5)}</div>
+              </div>
+            </div>
+            <p className="summary-text">
+              Orbit speed and bank angle tighten as risk climbs — a calm, wide circle means a healthy
+              engine; a fast, tight, banked orbit signals it's time to bring UAV-{seed.toString().padStart(3, '0')} home.
+            </p>
+          </div>
         </section>
       ) : (
       <>

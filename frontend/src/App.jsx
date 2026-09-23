@@ -3,6 +3,8 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer,
 } from 'recharts'
 import { fetchHealth, fetchSimulation } from './api'
+import { fetchSim, fetchFaults } from './faultApi'
+import AgentChat from './components/AgentChat'
 import SpacecraftVisual3D from './SpacecraftVisual3D'
 import WarRoomBackground from './WarRoomBackground'
 import RecommendationPanel from './components/RecommendationPanel'
@@ -37,19 +39,31 @@ export default function App() {
   const [alerts, setAlerts] = useState([])
   const [fleetData, setFleetData] = useState(null)
   const [fleetLoading, setFleetLoading] = useState(false)
+  const [faults, setFaults] = useState([])
+  const [fault, setFault] = useState('')
+  const [severity, setSeverity] = useState(0.6)
+  const [faultStart, setFaultStart] = useState(60)
+  const [mitigate, setMitigate] = useState(0.5)
+  const [whatIf, setWhatIf] = useState(null)
   const playRef = useRef(null)
   const prevStatusRef = useRef(null)
 
   useEffect(() => { fetchHealth().then(setHealth).catch(() => setHealth(null)) }, [])
+  useEffect(() => { fetchFaults().then(setFaults).catch(() => setFaults([])) }, [])
 
   useEffect(() => {
     setLoading(true)
     setError(null)
-    fetchSimulation(cycles, seed)
+    setWhatIf(null)
+    fetchSim({ cycles, seed, fault, severity, faultStart })
       .then((d) => { setSim(d); setCurrentCycle(cycles - 1) })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
-  }, [cycles, seed])
+  }, [cycles, seed, fault, severity, faultStart])
+
+  const runWhatIf = () =>
+    fetchSim({ cycles, seed, fault, severity, faultStart, mitigate, mitigateAt: currentCycle })
+      .then(setWhatIf).catch((e) => setError(e.message))
 
   useEffect(() => {
     if (!playing || !sim) return
@@ -74,10 +88,13 @@ export default function App() {
         predictedRul: sim.predicted_rul[c - first],
         trueRul: sim.true_rul[c],
         anomalyScore: sim.anomaly_scores[c],
+        rulLow: sim.rul_low?.[c - first],
+        rulHigh: sim.rul_high?.[c - first],
+        whatIfRul: whatIf ? whatIf.predicted_rul[c - first] : undefined,
       })
     }
     return rows
-  }, [sim, currentCycle])
+  }, [sim, currentCycle, whatIf])
 
   const sensorSeriesData = useMemo(() => {
     if (!sim || currentCycle === null) return []
@@ -306,10 +323,39 @@ export default function App() {
               </label>
             </section>
 
+            <section className="fault-panel">
+              <label>Inject fault
+                <select value={fault} onChange={(e) => setFault(e.target.value)}>
+                  <option value="">None (healthy)</option>
+                  {faults.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+                </select>
+              </label>
+              <label>Severity {severity.toFixed(1)}
+                <input type="range" min={0.2} max={1.5} step={0.1} value={severity} disabled={!fault}
+                  onChange={(e) => setSeverity(Number(e.target.value))} />
+              </label>
+              <label>Starts at cycle {faultStart}
+                <input type="range" min={20} max={cycles - 20} step={5} value={faultStart} disabled={!fault}
+                  onChange={(e) => setFaultStart(Number(e.target.value))} />
+              </label>
+              <label>What-if: cut load/stress {Math.round(mitigate * 100)}%
+                <input type="range" min={0.1} max={0.9} step={0.1} value={mitigate} disabled={!fault}
+                  onChange={(e) => setMitigate(Number(e.target.value))} />
+              </label>
+              <button className="save-btn" disabled={!fault} onClick={runWhatIf}>Apply at cycle {currentCycle}</button>
+              {whatIf && (
+                <span className="whatif-result">
+                  Mitigation at cycle {currentCycle} changes final RUL by{' '}
+                  {(whatIf.predicted_rul.at(-1) - sim.predicted_rul.at(-1)).toFixed(1)} cycles (green line)
+                </span>
+              )}
+            </section>
+
             <section className="hero">
               <div className="hero-metric">
                 <div className="hero-label">Predicted RUL</div>
                 <div className="hero-value mono">{predictedRul.toFixed(1)}<span className="unit">cycles</span></div>
+                {sim.rul_low && <div className="hero-sub mono">likely {sim.rul_low[idx].toFixed(0)}–{sim.rul_high[idx].toFixed(0)}</div>}
               </div>
               <div className="hero-metric">
                 <div className="hero-label">Anomaly score</div>
@@ -320,6 +366,7 @@ export default function App() {
             </section>
 
             <RecommendationPanel explanations={sim.explanations} currentCycle={currentCycle} />
+            <AgentChat sim={sim} cycle={currentCycle} status={status} />
 
             {alerts.length > 0 && (
               <section className="alert-log">
@@ -347,6 +394,9 @@ export default function App() {
                     <Tooltip contentStyle={tip} />
                     <Line type="monotone" dataKey="predictedRul" stroke="var(--accent-cyan)" dot={false} strokeWidth={2} name="Predicted RUL" />
                     <Line type="monotone" dataKey="trueRul" stroke="var(--text-secondary)" dot={false} strokeWidth={1.5} strokeDasharray="4 4" name="Simulated true RUL" />
+                    <Line type="monotone" dataKey="rulLow" stroke="var(--accent-cyan)" dot={false} strokeWidth={1} strokeOpacity={0.4} strokeDasharray="2 3" name="RUL low" />
+                    <Line type="monotone" dataKey="rulHigh" stroke="var(--accent-cyan)" dot={false} strokeWidth={1} strokeOpacity={0.4} strokeDasharray="2 3" name="RUL high" />
+                    <Line type="monotone" dataKey="whatIfRul" stroke="var(--status-normal)" dot={false} strokeWidth={2} name="With mitigation" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>

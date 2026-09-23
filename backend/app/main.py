@@ -17,6 +17,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import model_utils
 from .explain import build_explanations
+from .faults import FAULTS, inject
+
+
+def rul_band(rul_preds, k=1.5, w=10):
+    """Heuristic uncertainty band: rolling variance of predictions + 8% of value."""
+    r = np.asarray(rul_preds, dtype=float)
+    sd = np.array([r[max(0, i - w):i + 1].std() for i in range(len(r))])
+    m = k * sd + 0.08 * r
+    return np.maximum(r - m, 0), r + m
+
 from .physics_twin import physics_residual
 from .spacecraft_channels import channel_names, channel_info
 
@@ -36,6 +46,11 @@ _artifacts = model_utils.load_artifacts()
 THERMAL_CHANNEL_INDEX = 3
 
 
+@app.get("/api/faults")
+def faults():
+    return [{"key": k, "label": v["label"]} for k, v in FAULTS.items()]
+
+
 @app.get("/api/health")
 def health():
     return {
@@ -52,6 +67,11 @@ def health():
 def simulate(
     cycles: int = Query(200, ge=60, le=500, description="Length of the simulated mission"),
     seed: int = Query(42, description="Random seed for a different simulated run"),
+    fault: str = Query("", description="Fault key from /api/faults (empty = none)"),
+    severity: float = Query(0.6, ge=0.0, le=2.0),
+    fault_start: int = Query(60, ge=0),
+    mitigate: float = Query(0.0, ge=0.0, le=1.0, description="What-if: fraction the fault growth is slowed"),
+    mitigate_at: int = Query(-1, description="What-if: cycle where mitigation starts"),
 ):
     config = _artifacts["config"]
     n_features = len(config["feature_cols"])
@@ -62,6 +82,9 @@ def simulate(
     data, true_rul, sensitive_idx, degradation_start = model_utils.simulate_engine_run(
         _artifacts["rul_model"], _artifacts["ae_model"], cycles, n_features, window_size, seed, rul_cap
     )
+    if fault:
+        data = inject(data, fault, min(fault_start, cycles - 1), severity,
+                      mitigate, mitigate_at if mitigate_at >= 0 else None)
     rul_preds, anomaly_scores, feature_errors = model_utils.run_predictions(
         _artifacts["rul_model"], _artifacts["ae_model"], data, window_size
     )
@@ -109,6 +132,7 @@ def simulate(
             "feature_subsystems": [channel_info(i)[1] for i in range(n_features)],
             "feature_units": [channel_info(i)[2] for i in range(n_features)],
             "thermal_channel_index": thermal_idx,
+            "fault": fault or None,
         },
         "true_rul": true_rul.tolist(),
         "predicted_rul": rul_preds.tolist(),
@@ -117,5 +141,7 @@ def simulate(
         "sensor_data": data.tolist(),
         "feature_errors": feature_errors.tolist(),
         "physics": physics,
+        "rul_low": rul_band(rul_preds)[0].tolist(),
+        "rul_high": rul_band(rul_preds)[1].tolist(),
         "explanations": explanations,
     }

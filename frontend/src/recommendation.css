@@ -37,3 +37,20 @@
   font-size: 11px;
   margin: 0 8px 4px;
 }
+
+/* Fault injection / what-if / agent */
+.fault-panel { display:flex; flex-wrap:wrap; gap:20px; align-items:flex-end; border-radius:10px; padding:16px 20px; margin-bottom:24px;
+  background:linear-gradient(180deg,rgba(24,32,39,.82),rgba(10,14,18,.88)); border:1px solid var(--border); }
+.fault-panel label { display:flex; flex-direction:column; gap:6px; font-size:12px; color:var(--text-secondary);
+  font-family:'IBM Plex Mono',monospace; text-transform:uppercase; }
+.fault-panel select, .agent-input input { background:var(--bg); border:1px solid var(--border); color:var(--text-primary);
+  border-radius:6px; padding:7px 8px; font-family:'IBM Plex Mono',monospace; }
+.whatif-result { font-size:13px; color:var(--status-normal); font-family:'IBM Plex Mono',monospace; }
+.agent-box { border:1px solid var(--border); border-radius:10px; padding:14px;
+  background:linear-gradient(180deg,rgba(24,32,39,.82),rgba(10,14,18,.88)); }
+.agent-log { max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
+.agent-msg { font-size:13px; line-height:1.5; }
+.agent-msg.agent { color:var(--accent-cyan); }
+.agent-quick { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+.agent-input { display:flex; gap:10px; }
+.agent-input input { flex:1; }

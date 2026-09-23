@@ -62,11 +62,9 @@ def ambient_temperature(t, altitude_m=4500):
 def engine_thermal_ode(t, T, params):
     T_engine = T[0]
     T_ambient = ambient_temperature(t)
-
-    # Heat generated from combustion that ends up heating the engine block
+ # Heat generated from combustion that ends up heating the engine block
     m_fuel = fuel_flow_rate(t)
     Q_in = params["eta_thermal"] * m_fuel * params["LHV"]  # Watts
-
     # Heat lost via convection (airflow over engine)
     Q_conv = params["h_conv"] * params["A_surface"] * (T_engine - T_ambient)
 

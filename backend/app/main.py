@@ -1,33 +1,39 @@
 """
-Engine Digital Twin — FastAPI backend
+Spacecraft Digital Twin - FastAPI backend
 
 Endpoints:
     GET  /api/health          -> service + model status check
-    GET  /api/simulate        -> run a full simulated mission through the
-                                  trained models and return everything the
-                                  frontend needs to render the dashboard
+    GET  /api/simulate        -> simulate a mission and return telemetry,
+                                 anomaly scores, RUL predictions, physics
+                                 residuals and explainable recommendations
 
 Run locally:
     uvicorn app.main:app --reload --port 8000
 """
 
+import numpy as np
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import model_utils
+from .explain import build_explanations
+from .physics_twin import physics_residual
+from .spacecraft_channels import channel_names, channel_info
 
-app = FastAPI(title="Engine Digital Twin API", version="1.0.0")
+app = FastAPI(title="Spacecraft Digital Twin API", version="2.0.0")
 
-# Allow the frontend (any origin, tighten this to your deployed frontend URL
-# in production) to call this API.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # tighten to your deployed frontend URL in production
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 _artifacts = model_utils.load_artifacts()
+
+# Which channel the thermal physics model is compared against.
+# Index 3 = "Battery Temperature" in spacecraft_channels.py
+THERMAL_CHANNEL_INDEX = 3
 
 
 @app.get("/api/health")
@@ -45,7 +51,7 @@ def health():
 @app.get("/api/simulate")
 def simulate(
     cycles: int = Query(200, ge=60, le=500, description="Length of the simulated mission"),
-    seed: int = Query(42, description="Random seed - change for a different simulated run"),
+    seed: int = Query(42, description="Random seed for a different simulated run"),
 ):
     config = _artifacts["config"]
     n_features = len(config["feature_cols"])
@@ -60,17 +66,11 @@ def simulate(
         _artifacts["rul_model"], _artifacts["ae_model"], data, window_size
     )
 
-    # Safety net: calibrate the "critical" cutoff against this mission's own
-    # pre-degradation reconstruction error instead of trusting config.pkl's
-    # threshold blindly. The stored threshold was fit against the original
-    # training set's error distribution; if the live simulator's healthy
-    # baseline sits even slightly off that distribution (different seed,
-    # different noise level, a retrained model, etc.), a stale threshold
-    # makes every mission report critical from cycle zero. Using
-    # mean + 4*std of the actual healthy-phase errors keeps the cutoff
-    # honest for whatever data is actually being scored right now.
+    # Calibrate the critical cutoff against this mission's healthy phase
     healthy_errors = anomaly_scores[:degradation_start]
-    calibrated_threshold = float(healthy_errors.mean() + 4 * healthy_errors.std()) if len(healthy_errors) else threshold
+    calibrated_threshold = (
+        float(healthy_errors.mean() + 4 * healthy_errors.std()) if len(healthy_errors) else threshold
+    )
     threshold = max(threshold, calibrated_threshold)
 
     first_valid_cycle = window_size - 1
@@ -86,6 +86,15 @@ def simulate(
             status = "normal"
         status_per_cycle.append(status)
 
+    # --- Physics half of the hybrid twin -----------------------------------
+    thermal_idx = min(THERMAL_CHANNEL_INDEX, n_features - 1)
+    physics = physics_residual(np.asarray(data)[:, thermal_idx], cycles)
+
+    # --- Explainable recommendations ---------------------------------------
+    explanations = build_explanations(
+        first_valid_cycle, status_per_cycle, rul_preds, feature_errors
+    )
+
     return {
         "meta": {
             "cycles": cycles,
@@ -96,7 +105,10 @@ def simulate(
             "first_valid_cycle": first_valid_cycle,
             "using_real_models": _artifacts["using_real_models"],
             "sensitive_sensor_indices": sensitive_idx,
-            "feature_names": config["feature_cols"],
+            "feature_names": channel_names(n_features),
+            "feature_subsystems": [channel_info(i)[1] for i in range(n_features)],
+            "feature_units": [channel_info(i)[2] for i in range(n_features)],
+            "thermal_channel_index": thermal_idx,
         },
         "true_rul": true_rul.tolist(),
         "predicted_rul": rul_preds.tolist(),
@@ -104,4 +116,6 @@ def simulate(
         "status_per_cycle": status_per_cycle,
         "sensor_data": data.tolist(),
         "feature_errors": feature_errors.tolist(),
+        "physics": physics,
+        "explanations": explanations,
     }

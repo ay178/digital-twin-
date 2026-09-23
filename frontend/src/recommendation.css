@@ -1,0 +1,39 @@
+/* Add these to the END of your existing CSS file (or import this file) */
+
+.rec-card {
+  position: relative;
+  background: linear-gradient(180deg, rgba(24, 32, 39, 0.82), rgba(10, 14, 18, 0.88));
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--status-watch);
+  border-radius: 10px;
+  padding: 14px 18px;
+}
+.rec-card[data-sev="CRITICAL"] {
+  border-left-color: var(--status-critical);
+  box-shadow: 0 0 20px -8px var(--status-critical);
+}
+.rec-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.rec-cycle { font-size: 12px; color: var(--text-secondary); }
+.rec-eta { margin-left: auto; font-size: 12px; color: var(--status-watch); }
+.rec-line { font-size: 13px; line-height: 1.55; margin: 4px 0; }
+.rec-evidence {
+  margin-top: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: none;
+  box-shadow: none;
+  padding: 10px 12px;
+}
+.rec-evidence::before, .rec-evidence::after { display: none; }
+.physics-legend {
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+  margin: 0 8px 4px;
+}

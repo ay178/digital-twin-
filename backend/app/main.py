@@ -15,7 +15,7 @@ import numpy as np
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import model_utils
+from . import model_utils_v2 as model_utils
 from .explain import build_explanations
 from .faults import FAULTS, inject
 
@@ -85,6 +85,13 @@ def simulate(
     if fault:
         data = inject(data, fault, min(fault_start, cycles - 1), severity,
                       mitigate, mitigate_at if mitigate_at >= 0 else None)
+    # Ground-truth RUL now depends on the injected fault
+    fs = min(fault_start, cycles - 1)
+    true_rul = model_utils.true_rul(cycles, n_features, fault, severity, fs, rul_cap,
+                                    mitigate, mitigate_at if mitigate_at >= 0 else None)
+    if fault:
+        degradation_start = max(fs, 10)
+        sensitive_idx = model_utils.fault_channel_indices(fault)
     rul_preds, anomaly_scores, feature_errors = model_utils.run_predictions(
         _artifacts["rul_model"], _artifacts["ae_model"], data, window_size
     )
